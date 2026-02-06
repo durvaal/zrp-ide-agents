@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZRP | Agentes na IDE - Engenharia de Contexto</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;900&family=JetBrains+Mono:wght@400;700&display=swap');
+
+        :root {
+            --zrp-orange: #F26522;
+            --zrp-black: #111111;
+            --zrp-white: #FFFFFF;
+            --zrp-border: #E5E5E5;
+            --vscode-bg: #1e1e1e;
+            --vscode-sidebar: #252526;
+            --vscode-activity: #333333;
+            --vscode-tab-active: #1e1e1e;
+            --vscode-tab-inactive: #2d2d2d;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--zrp-white);
+            color: var(--zrp-black);
+            overflow-x: hidden;
+            scroll-behavior: smooth;
+        }
+
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+
+        .reveal {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: all 0.8s cubic-bezier(0.2, 1, 0.3, 1);
+        }
+        .reveal.active {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .chart-container {
+            position: relative;
+            width: 100%;
+            height: 350px;
+        }
+
+        /* Main Navigation styling */
+        .nav-btn {
+            position: relative;
+            transition: all 0.3s ease;
+            color: #666;
+            font-weight: 700;
+        }
+        .nav-btn:hover { color: var(--zrp-orange); }
+        .nav-btn.active {
+            color: var(--zrp-orange) !important;
+            font-weight: 900;
+        }
+        .nav-btn.active::after {
+            content: '';
+            position: absolute;
+            bottom: -4px;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: var(--zrp-orange);
+        }
+
+        .ide-window {
+            background-color: var(--vscode-bg);
+            border: 1px solid #3e3e42;
+            border-radius: 8px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .ide-title-bar {
+            height: 35px;
+            background-color: #323233;
+            display: flex;
+            align-items: center;
+            padding: 0 12px;
+            justify-content: space-between;
+            user-select: none;
+        }
+
+        .window-controls { display: flex; gap: 8px; }
+        .control { width: 12px; height: 12px; border-radius: 50%; }
+        .close { background-color: #ff5f56; }
+        .minimize { background-color: #ffbd2e; }
+        .maximize { background-color: #27c93f; }
+
+        .activity-bar {
+            width: 50px;
+            background-color: var(--vscode-activity);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding-top: 15px;
+            gap: 20px;
+        }
+
+        .activity-icon {
+            color: #858585;
+            font-size: 20px;
+            cursor: pointer;
+        }
+        .activity-icon.active { color: #ffffff; border-left: 2px solid var(--zrp-orange); padding-left: 10px; margin-left: -10px; }
+
+        .sidebar-item {
+            padding: 6px 16px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: #cccccc;
+            white-space: nowrap;
+        }
+        .sidebar-item:hover { background-color: #2a2d2e; }
+        .sidebar-item.active { background-color: #37373d; color: #ffffff; }
+
+        .tab {
+            padding: 0 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 11px;
+            color: #969696;
+            background-color: var(--vscode-tab-inactive);
+            border-right: 1px solid #1e1e1e;
+            cursor: pointer;
+        }
+        .tab.active {
+            background-color: var(--vscode-tab-active);
+            color: #ffffff;
+            border-top: 1px solid var(--zrp-orange);
+        }
+
+        .status-bar {
+            height: 22px;
+            background-color: var(--zrp-black);
+            display: flex;
+            align-items: center;
+            padding: 0 12px;
+            justify-content: space-between;
+            font-size: 11px;
+            color: #ffffff;
+        }
+
+        .line-numbers {
+            padding: 0 15px;
+            border-right: 1px solid #333;
+            text-align: right;
+            color: #858585;
+            user-select: none;
+            min-width: 45px;
+        }
+
+        .chat-msg {
+            max-width: 95%;
+            border-radius: 8px;
+            padding: 12px;
+            font-size: 12px;
+            line-height: 1.5;
+            margin-bottom: 12px;
+            position: relative;
+            animation: fadeIn 0.3s ease-out;
+        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+        .user-msg { background-color: #2d2d2d; color: white; border: 1px solid #3e3e42; align-self: flex-end; border-radius: 8px 8px 0 8px; }
+        .ai-msg { background-color: #1a1a1a; border: 1px solid #3e3e42; color: #ccc; align-self: flex-start; border-radius: 8px 8px 8px 0; }
+
+        .cursor-diff-bar {
+            background-color: #1e1e1e;
+            border: 1px solid var(--zrp-orange);
+            border-radius: 6px;
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: absolute;
+            bottom: 25px;
+            left: 25px;
+            right: 25px;
+            z-index: 100;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.7);
+        }
+
+        .btn-accept { background-color: #2ea043; color: white; border-radius: 4px; padding: 6px 14px; font-size: 11px; font-weight: bold; cursor: pointer; border: none; }
+        .btn-reject { background-color: #3e3e42; color: white; border-radius: 4px; padding: 6px 14px; font-size: 11px; font-weight: bold; cursor: pointer; border: none; }
+
+        .diff-added { background-color: rgba(46, 160, 67, 0.2); border-left: 4px solid #2ea043; color: #adbac7; width: 100%; display: block; }
+        .diff-removed { background-color: rgba(248, 81, 73, 0.15); border-left: 4px solid #f85149; color: #768390; text-decoration: line-through; opacity: 0.7; width: 100%; display: block; }
+        .diff-line { font-family: 'JetBrains Mono', monospace; white-space: pre; line-height: 1.8; font-size: 12px; padding-left: 8px; }
+
+        .persona-badge {
+            font-size: 10px;
+            font-family: 'JetBrains Mono', monospace;
+            padding: 2px 8px;
+            border: 1px solid var(--zrp-black);
+            text-transform: uppercase;
+            font-weight: bold;
+            min-width: 95px;
+            text-align: center;
+            display: inline-block;
+        }
+
+        .glossary-card {
+            border: 1px solid var(--zrp-border);
+            padding: 1.5rem;
+            transition: all 0.3s ease;
+        }
+        .glossary-card:hover { border-color: var(--zrp-orange); background-color: #fafafa; }
+
+        .custom-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #444; border-radius: 10px; }
+        
+        .typing-dot { width: 4px; height: 4px; background: #888; border-radius: 50%; display: inline-block; margin-right: 2px; animation: bounce 1s infinite; }
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes bounce { 0%, 80%, 100% { transform: translateY(0); } 40% { transform: translateY(-4px); } }
+
+        /* Guide Tabs styling */
+        .guide-tabs {
+            display: flex;
+            border-bottom: 1px solid var(--zrp-border);
+            margin-bottom: 2rem;
+            overflow-x: auto;
+            gap: 1rem;
+            padding-bottom: 1px;
+        }
+        .guide-tab {
+            padding: 12px 20px;
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #888;
+            cursor: pointer;
+            white-space: nowrap;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s ease;
+        }
+        .guide-tab:hover { color: #333; }
+        .guide-tab.active {
+            color: var(--zrp-orange);
+            border-bottom-color: var(--zrp-orange);
+        }
+
+        .example-block {
+            background-color: #f8f9fa;
+            border: 1px solid var(--zrp-border);
+            border-left: 4px solid var(--zrp-orange);
+            padding: 1.5rem;
+            position: relative;
+            margin-bottom: 1.5rem;
+        }
+        .example-header {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: #888;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .example-code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            color: #333;
+            white-space: pre-wrap;
+            line-height: 1.6;
+        }
+
+        .reference-links {
+            margin-top: 3rem;
+            padding-top: 2rem;
+            border-top: 1px dashed var(--zrp-border);
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1.5rem;
+        }
+        .ref-link-card {
+            background: #fff;
+            border: 1px solid var(--zrp-border);
+            padding: 1.25rem;
+            text-decoration: none;
+            color: var(--zrp-black);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: 0.3s;
+        }
+        .ref-link-card:hover {
+            border-color: var(--zrp-orange);
+            background: rgba(242, 101, 34, 0.05);
+            transform: translateY(-2px);
+        }
+
+        .outcome-card {
+            border: 1px solid var(--zrp-border);
+            padding: 2rem;
+            background: #fff;
+            transition: all 0.3s ease;
+            height: 100%;
+        }
+        .outcome-card:hover { border-color: var(--zrp-orange); }
+
+        .warning-card {
+            background-color: #fff9f5;
+            border-left: 4px solid #f97316;
+            padding: 1.5rem;
+        }
+
+        .trade-off-item {
+            font-size: 11px;
+            line-height: 1.4;
+            margin-top: 6px;
+            padding-left: 10px;
+            border-left: 1px solid #eee;
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <nav class="fixed top-0 w-full z-50 bg-white/90 backdrop-blur-md border-b border-[#E5E5E5]">
+        <div class="max-w-7xl mx-auto px-6 text-sm uppercase tracking-widest font-bold">
+            <div class="flex justify-between h-20 items-center">
+                <div class="flex items-center space-x-2">
+                    <span class="font-black text-2xl tracking-tighter">ZRP<span class="text-[#F26522]">.</span></span>
+                    <span class="text-[10px] font-mono border-l border-gray-300 pl-3 pt-1 text-gray-500">Engineering Labs</span>
+                </div>
+                <div class="hidden md:flex space-x-8" id="main-nav">
+                    <button onclick="scrollToSection('intro')" class="nav-btn active" data-section="intro">Início</button>
+                    <button onclick="scrollToSection('glossary')" class="nav-btn" data-section="glossary">Glossário</button>
+                    <button onclick="scrollToSection('simulation')" class="nav-btn" data-section="simulation">Demo IDE</button>
+                    <button onclick="scrollToSection('context-guide')" class="nav-btn" data-section="context-guide">Guia de Contexto</button>
+                    <button onclick="scrollToSection('outcomes')" class="nav-btn" data-section="outcomes">Reflexão</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Intro Section -->
+    <section id="intro" class="pt-40 pb-20 max-w-7xl mx-auto px-6">
+        <div class="reveal">
+            <p class="font-mono text-[#F26522] mb-4">// Engineering sophisticated AI workflows</p>
+            <h1 class="text-6xl md:text-8xl font-black mb-4 leading-none uppercase tracking-tighter">
+                O Fim do <br><span class="text-gray-300">Determinismo.</span>
+            </h1>
+            <p class="text-gray-500 font-mono text-sm uppercase tracking-widest max-w-3xl leading-relaxed mb-12 text-justify">
+                O fim do determinismo não é o fim da engenharia. É o início da engenharia de sistemas probabilísticos, onde o contexto é a única trava de qualidade para o time.
+            </p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-px bg-[#E5E5E5] border border-[#E5E5E5] mt-10 reveal">
+            <div class="bg-white p-12 space-y-10">
+                <div class="space-y-4">
+                    <h3 class="text-2xl font-black uppercase tracking-tight">O Ciclo de Vida (SDLC) Alinhado</h3>
+                    <p class="text-gray-600 leading-relaxed text-sm text-justify">
+                        Na ZRP, a senioridade não é mais "quem digita mais rápido", mas quem orquestra o contexto para que todos (humanos e IAs) falem a mesma língua técnica.
+                    </p>
+                </div>
+                
+                <div class="grid grid-cols-1 gap-6 pt-4 border-t border-gray-100 overflow-y-auto max-h-[480px] custom-scroll pr-4 text-justify">
+                    <div class="flex items-start gap-4 p-2 hover:bg-gray-50 transition-colors">
+                        <span class="persona-badge mt-1">PO / PM</span>
+                        <p class="text-xs text-gray-600">Fornece o "O Quê" via PRDs estruturados. É o prompt mestre que impede a IA de implementar regras de negócio fantasiosas.</p>
+                    </div>
+
+                    <div class="flex items-start gap-4 p-2 bg-gray-50/30 border-l-2 border-gray-300">
+                        <span class="persona-badge mt-1">DESIGN</span>
+                        <p class="text-xs text-gray-600">Define <strong>Design Tokens</strong> em Markdown. Com isso, a IA gera interfaces padronizadas, reduzindo drasticamente a alucinação visual na UI.</p>
+                    </div>
+                    
+                    <div class="flex flex-col gap-2 p-2 bg-gray-50/50 border-l-2 border-[#F26522]">
+                        <div class="flex items-center gap-4">
+                            <span class="persona-badge">DEV & QA</span>
+                            <p class="text-xs font-bold text-gray-800 uppercase">Guardiões da Implementação</p>
+                        </div>
+                        <p class="text-[11px] text-gray-500 mb-2 italic">Trabalham nas mesmas ADRs e Specs. O DEV implementa com auxílio, o QA valida a lógica, ambos revisam a IA.</p>
+                        <div class="grid grid-cols-1 gap-2">
+                            <div class="trade-off-item"><strong>Junior:</strong> IA como mentor de aprendizado. Deve questionar o "porquê" das sugestões para não se tornar dependente da ferramenta.</div>
+                            <div class="trade-off-item"><strong>Pleno+:</strong> Arquiteto de decisões e Revisor. Garante que o Agente siga as restrições sistêmicas e ADRs do projeto.</div>
+                        </div>
+                    </div>
+
+                    <div class="flex items-start gap-4 p-2 hover:bg-gray-50 transition-colors">
+                        <span class="persona-badge mt-1">DEVOPS</span>
+                        <p class="text-xs text-gray-600">Configura <strong>Security Guardrails</strong> e triagem automática de logs. Garante que a IA atue sob conformidade total.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white p-12 flex flex-col justify-center items-center border-l border-gray-100 relative">
+                <div class="chart-container">
+                    <canvas id="determinismChart"></canvas>
+                </div>
+                <p class="mt-8 font-mono text-[9px] text-gray-400 uppercase tracking-widest text-center">Índice de Assertividade em Automação (Métrica de Engenharia)</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Glossary Section -->
+    <section id="glossary" class="py-24 max-w-7xl mx-auto px-6 border-t border-[#E5E5E5]">
+        <div class="reveal mb-16">
+            <p class="font-mono text-[#F26522] mb-2 uppercase tracking-widest">// Technical Alignment</p>
+            <h2 class="text-5xl font-black uppercase tracking-tighter">Glossário de <span class="text-gray-300">Engenharia</span></h2>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 reveal text-justify">
+            <div class="glossary-card">
+                <span class="font-mono text-[#F26522] text-xs block mb-2">PROMPT MESTRE</span>
+                <h4 class="font-black uppercase mb-3 text-xl">PRD</h4>
+                <p class="text-sm text-gray-600 leading-relaxed">Documento de Requisitos. Define o "O Que". É a fonte da verdade para o Agente construir testes e código fiéis.</p>
+            </div>
+            <div class="glossary-card">
+                <span class="font-mono text-[#F26522] text-xs block mb-2">BLUEPRINT</span>
+                <h4 class="font-black uppercase mb-3 text-xl">Specs</h4>
+                <p class="text-sm text-gray-600 leading-relaxed">Especificações detalhadas. Funcionam como as instruções que o Agente utiliza para mapear o comportamento esperado.</p>
+            </div>
+            <div class="glossary-card">
+                <span class="font-mono text-[#F26522] text-xs block mb-2">PROTEÇÃO ATIVA</span>
+                <h4 class="font-black uppercase mb-3 text-xl">Guardrails</h4>
+                <p class="text-sm text-gray-600 leading-relaxed">Travas de segurança e governança que impedem alucinações da IA e garantem conformidade sistêmica e de segredos.</p>
+            </div>
+            <div class="glossary-card">
+                <span class="font-mono text-[#F26522] text-xs block mb-2">HISTÓRICO TÉCNICO</span>
+                <h4 class="font-black uppercase mb-3 text-xl">ADR</h4>
+                <p class="text-sm text-gray-600 leading-relaxed">Decision Record. Registro que explica o "porquê" de escolhas técnicas, evitando que o agente sugira padrões já descartados.</p>
+            </div>
+            <div class="glossary-card">
+                <span class="font-mono text-[#F26522] text-xs block mb-2">ESTILO CONSISTENTE</span>
+                <h4 class="font-black uppercase mb-3 text-xl">Design Tokens</h4>
+                <p class="text-sm text-gray-600 leading-relaxed">Variáveis visuais definidas em Markdown que impedem a IA de inventar cores ou estilos fora do Guia de Marca.</p>
+            </div>
+            <div class="glossary-card">
+                <span class="font-mono text-[#F26522] text-xs block mb-2">REDUÇÃO DE ERRO</span>
+                <h4 class="font-black uppercase mb-3 text-xl">Hallucination Gap</h4>
+                <p class="text-sm text-gray-600 leading-relaxed">O espaço de erro quando a IA preenche lacunas por falta de contexto. Reduzimos esse gap com documentação local.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Simulation Section -->
+    <section id="simulation" class="py-24 bg-gray-100 border-y border-[#E5E5E5]">
+        <div class="max-w-7xl mx-auto px-6">
+            <div class="reveal mb-12 flex flex-col md:flex-row md:items-end justify-between gap-8 text-center md:text-left">
+                <div>
+                    <h2 class="text-4xl font-black uppercase tracking-tighter">Demo: <span class="text-[#F26522]">ZRP IDE</span> Workflow</h2>
+                    <p class="text-gray-500 font-mono text-xs mt-2 uppercase tracking-widest">// Simulando o fluxo real de implementação assistida</p>
+                </div>
+                <div class="flex gap-2 bg-white p-1 border border-gray-300 shadow-sm rounded text-xs font-bold" id="demo-controls">
+                    <button onclick="runSimulation('step1', this)" id="btn-step1" class="demo-step-btn px-6 py-2 uppercase tracking-widest transition-all rounded">1. Ask</button>
+                    <button onclick="runSimulation('step2', this)" id="btn-step2" class="demo-step-btn px-6 py-2 uppercase tracking-widest transition-all rounded">2. Plan</button>
+                    <button onclick="runSimulation('step3', this)" id="btn-step3" class="demo-step-btn px-6 py-2 uppercase tracking-widest transition-all rounded">3. Agent</button>
+                </div>
+            </div>
+
+            <div class="ide-window h-[600px] reveal relative">
+                <div class="ide-title-bar">
+                    <div class="window-controls">
+                        <div class="control close"></div><div class="control minimize"></div><div class="control maximize"></div>
+                    </div>
+                    <div class="text-[10px] text-gray-400 font-mono uppercase tracking-widest">zrp-automation — auth.spec.ts</div>
+                    <div class="w-12"></div>
+                </div>
+                <div class="flex flex-1 overflow-hidden">
+                    <div class="activity-bar"><div class="activity-icon active">📁</div><div class="activity-icon">🔍</div><div class="activity-icon">🤖</div></div>
+                    <div class="w-64 bg-[#252526] border-r border-[#1e1e1e] flex flex-col text-[11px] text-gray-400">
+                        <div class="p-3 uppercase font-bold text-gray-500 border-b border-[#333]">Explorer</div>
+                        <div class="p-4 space-y-2">
+                            <div class="sidebar-item active">🧪 auth.spec.ts</div>
+                            <div class="sidebar-item">📜 PRD.md</div>
+                            <div class="sidebar-item">📜 ADR-001.md</div>
+                        </div>
+                    </div>
+                    <div class="flex-1 flex flex-col min-w-0 bg-[#1e1e1e]">
+                        <div class="editor-tabs"><div class="tab active">auth.spec.ts</div></div>
+                        <div class="flex flex-1 overflow-hidden">
+                            <div id="line-num-container" class="line-numbers font-mono text-[11px] py-4"></div>
+                            <div class="flex-1 p-4 font-mono text-[12px] text-gray-300 overflow-y-auto custom-scroll" id="code-content"></div>
+                            
+                            <div class="w-72 bg-[#1a1a1b] border-l border-[#3e3e42] flex flex-col">
+                                <div class="p-3 border-b border-[#3e3e42] bg-[#252526] text-[9px] font-bold uppercase text-gray-400">Agent Chat</div>
+                                <div class="flex-1 p-4 overflow-y-auto custom-scroll flex flex-col" id="chat-area"></div>
+                            </div>
+                        </div>
+
+                        <div id="cursor-bar" class="cursor-diff-bar" style="display: none;">
+                            <div class="text-[10px] text-white font-bold uppercase tracking-widest">ZRP Agent sugeriu mudanças</div>
+                            <div class="flex gap-2">
+                                <button class="btn-reject" onclick="rejectChange()">Reject</button>
+                                <button class="btn-accept shadow-lg" onclick="acceptChange()">Accept (Cmd+Enter)</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Guia de Contexto -->
+    <section id="context-guide" class="py-24 max-w-7xl mx-auto px-6 border-t border-gray-100">
+        <div class="reveal mb-20">
+            <p class="font-mono text-[#F26522] mb-4 uppercase tracking-widest">// Technical Manual</p>
+            <h2 class="text-5xl md:text-7xl font-black uppercase tracking-tighter">Guia de <br><span class="text-gray-300">Engenharia de Contexto</span></h2>
+        </div>
+
+        <div class="guide-tabs custom-scroll reveal" id="context-guide-tabs">
+            <div class="guide-tab active" onclick="switchContextTab('cursor', this)">Documentação do Cursor (.mdc)</div>
+            <div class="guide-tab" onclick="switchContextTab('agents', this)">AGENTS.md</div>
+            <div class="guide-tab" onclick="switchContextTab('vscode', this)">GitHub Copilot</div>
+            <div class="guide-tab" onclick="switchContextTab('product', this)">Product Context (PRD)</div>
+            <div class="guide-tab" onclick="switchContextTab('architecture', this)">Architecture Decision</div>
+            <div class="guide-tab" onclick="switchContextTab('analysis', this)">Análise (Guardrails)</div>
+        </div>
+
+        <!-- Tab Contents -->
+        <div id="tab-content-cursor" class="tab-panel active">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 text-justify">
+                <div class="p-8 border border-[#E5E5E5] bg-white text-center md:text-left">
+                    <h3 class="text-2xl font-black uppercase mb-4 tracking-tight">Project Rules (.mdc)</h3>
+                    <div class="example-block">
+                        <div class="example-header"><span>PATH: .cursor/rules/playwright-rules.mdc</span></div>
+                        <div class="example-code">---
+description: "Standards for E2E tests and Playwright automation"
+globs: "**/specs/**/*.spec.ts"
+alwaysApply: false
+---
+# Playwright Rules
+- Steps: Always write `test.step()` in Portuguese (PT-BR).
+- Resiliency: Use `page.getByRole`.</div>
+                    </div>
+                </div>
+                <div class="p-8 border border-l-0 border-[#E5E5E5] bg-gray-50 text-xs">
+                    <h4 class="font-bold uppercase mb-4 text-[#F26522]">Precedência</h4>
+                    <p>1. Team Rules (Global Compliance)</p>
+                    <p>2. Project Rules (Local Context)</p>
+                    <p>3. User Rules (Preferências Pessoais)</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-content-agents" class="tab-panel hidden">
+            <div class="p-8 border border-[#E5E5E5] bg-white max-w-3xl">
+                <h3 class="text-2xl font-black uppercase mb-4 tracking-tight">O Padrão AGENTS.md</h3>
+                <p class="text-sm text-gray-600 mb-6 text-justify">Ficheiro consolidado como língua franca entre IDEs. Atua como um manual de instruções Markdown simplificado.</p>
+                <div class="example-block">
+                    <div class="example-header"><span>FILE: AGENTS.md</span></div>
+                    <div class="example-code"># Onboarding for Agents
+- Repositório ZRP Fintech usando NestJS e Playwright.
+- Priorize código legível sobre sintaxe complexa.
+- Garanta que toda documentação siga OpenAPI 3.0.</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-content-vscode" class="tab-panel hidden">
+            <div class="p-8 border border-[#E5E5E5] bg-white max-w-3xl text-center md:text-left">
+                <h3 class="text-2xl font-black uppercase mb-4 tracking-tight">GitHub Copilot Custom Instructions</h3>
+                <div class="example-block">
+                    <div class="example-header"><span>FILE: .github/copilot-instructions.md</span></div>
+                    <div class="example-code"># Repository-wide Instructions
+<Goals>- Reduzir falhas de CI por tipos incorretos.</Goals>
+<BuildInstructions>- Rode 'npm run lint' antes de sugerir mudanças.</BuildInstructions></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-content-product" class="tab-panel hidden">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 text-center md:text-left">
+                <div class="p-8 border border-[#E5E5E5] bg-white">
+                    <h3 class="text-2xl font-black uppercase mb-4 tracking-tight">Mermaid e Gherkin</h3>
+                    <div class="example-block">
+                        <div class="example-header"><span>MERMAID (FLUXO LÓGICO)</span></div>
+                        <div class="example-code">```mermaid
+graph TD
+    A[Login] -->|Sucesso| B[Dashboard]
+    A -->|Erro| C[Aviso]
+```</div>
+                    </div>
+                </div>
+                <div class="p-8 border border-l-0 border-[#E5E5E5] bg-gray-50 text-xs flex flex-col justify-center">
+                    <p class="italic leading-relaxed text-justify">"Agentes modernos interpretam sintaxe Mermaid para reconstruir o modelo mental do negócio, reduzindo alucinações lógicas na geração de testes."</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-content-architecture" class="tab-panel hidden">
+            <div class="p-8 border border-[#E5E5E5] bg-white max-w-3xl text-center md:text-left">
+                <h3 class="text-2xl font-black uppercase mb-4 tracking-tight">Architecture Decisions (ADR)</h3>
+                <div class="example-block">
+                    <div class="example-header"><span>FILE: docs/arch/ADR-010.md</span></div>
+                    <div class="example-code"># ADR 010: Tailwind CSS
+## Decisão: Usaremos Tailwind para 100% dos novos componentes.
+## Consequências: O Agente não deve aceitar ficheiros CSS isolados.</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-content-analysis" class="tab-panel hidden">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div class="p-8 border border-[#E5E5E5] bg-white text-center md:text-left">
+                    <h3 class="text-2xl font-black uppercase mb-4 tracking-tight">Análise e Segurança</h3>
+                    <div class="example-block">
+                        <div class="example-header"><span>FILE: .cursor/rules/security-guardrails.mdc</span></div>
+                        <div class="example-code"># Security Guardrails
+- Secrets: NEVER suggest or commit hardcoded API keys. 
+- PII: When generating mock data, use 'faker' patterns.</div>
+                    </div>
+                </div>
+                <div class="p-8 border border-l-0 border-[#E5E5E5] bg-gray-50">
+                    <h4 class="font-bold uppercase text-xs mb-4 text-[#F26522]">Ferramentas Integradas</h4>
+                    <div class="space-y-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 bg-blue-100 rounded flex items-center justify-center font-bold text-blue-600 text-[10px]">SQ</div>
+                            <div>
+                                <span class="text-xs font-bold uppercase tracking-tighter">SonarQube Context</span>
+                                <p class="text-[10px] text-gray-500 leading-tight">Agentes leem reports de dívida técnica para sugerir refatorações.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Outcomes & Reflection Section -->
+    <section id="outcomes" class="py-24 bg-gray-50 border-t border-[#E5E5E5]">
+        <div class="max-w-7xl mx-auto px-6">
+            <div class="reveal mb-16 text-center md:text-left">
+                <p class="font-mono text-[#F26522] mb-4 uppercase tracking-widest">// Business Outcomes & Ethics</p>
+                <h2 class="text-5xl md:text-7xl font-black uppercase tracking-tighter">Resultados & <br><span class="text-gray-300">Reflexão</span></h2>
+                <p class="mt-8 text-gray-500 max-w-3xl leading-relaxed text-lg text-justify">
+                    A adoção de Agentes com Engenharia de Contexto não é apenas sobre velocidade, mas sobre a <strong>mudança de paradigma na governança e aprendizado do software</strong>.
+                </p>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 reveal">
+                <div class="outcome-card">
+                    <h4 class="font-black uppercase text-xl mb-4">Governança Assistida</h4>
+                    <p class="text-sm text-gray-600 leading-relaxed text-justify">
+                        Esperamos que o repositório se torne um <strong>sistema autocorretivo</strong>. Ao versionar ADRs e Rules, o Agente passa a ser o guardião do padrão técnico, rejeitando sugestões fora da arquitetura e acelerando o onboarding de novos membros para horas, não dias.
+                    </p>
+                </div>
+                <div class="outcome-card">
+                    <h4 class="font-black uppercase text-xl mb-4">Segurança por Design</h4>
+                    <p class="text-sm text-gray-600 leading-relaxed text-justify">
+                        Os <strong>Security Guardrails</strong> na IDE impedem que vulnerabilidades comuns sejam sequer escritas pela IA, atuando como um filtro de risco em tempo real. Isso reduz drasticamente o retrabalho após as falhas de segurança no CI/CD.
+                    </p>
+                </div>
+            </div>
+
+            <!-- WARNINGS / POINTS OF ATTENTION -->
+            <div class="mt-12 reveal">
+                <h3 class="text-2xl font-black uppercase mb-8">Pontos de Atenção no Dia a Dia</h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="warning-card">
+                        <span class="text-xs font-black uppercase text-orange-600 block mb-2">Armadilha do Junior</span>
+                        <p class="text-xs text-gray-600 text-justify">O maior risco é a <strong>dependência passiva</strong>. O desenvolvedor Junior deve usar a IA para perguntar o "porquê" de cada sugestão baseada no contexto local, garantindo que ele aprenda os fundamentos em vez de apenas colar código.</p>
+                    </div>
+                    <div class="warning-card">
+                        <span class="text-xs font-black uppercase text-orange-600 block mb-2">Hallucination Audit</span>
+                        <p class="text-xs text-gray-600 text-justify">A IA é probabilística. Mesmo com contexto rico, o "Human-in-the-loop" é obrigatório. O time deve atuar como <b>revisores de elite</b>, nunca aceitando mudanças sem validação lógica completa.</p>
+                    </div>
+                    <div class="warning-card">
+                        <span class="text-xs font-black uppercase text-orange-600 block mb-2">Entropia do Contexto</span>
+                        <p class="text-xs text-gray-600 text-justify">Regras desatualizadas são piores que regras inexistentes. O alinhamento do time é vital: se uma ADR muda, o ficheiro de contexto deve mudar no mesmo commit para manter o Agente alinhado.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Reference Links -->
+    <section class="py-24 max-w-7xl mx-auto px-6 border-t border-gray-100">
+        <div class="reveal">
+            <h4 class="font-black uppercase text-sm mb-6 tracking-widest text-[#F26522]">Referências Oficiais & Práticas</h4>
+            <div class="reference-links">
+                <a href="https://docs.cursor.com/context/rules" target="_blank" class="ref-link-card">
+                    <div class="text-[10px] font-bold uppercase tracking-wider">Documentação do Cursor</div>
+                    <span class="text-[#F26522] font-mono">↗</span>
+                </a>
+                <a href="https://docs.github.com/en/copilot" target="_blank" class="ref-link-card">
+                    <div class="text-[10px] font-bold uppercase tracking-wider">GitHub Copilot Documentation</div>
+                    <span class="text-[#F26522] font-mono">↗</span>
+                </a>
+                <a href="https://www.markdownguide.org/basic-syntax/" target="_blank" class="ref-link-card">
+                    <div class="text-[10px] font-bold uppercase tracking-wider">Escrita de Markdown</div>
+                    <span class="text-[#F26522] font-mono">↗</span>
+                </a>
+                <a href="https://cucumber.io/docs/gherkin/" target="_blank" class="ref-link-card">
+                    <div class="text-[10px] font-bold uppercase tracking-wider">Padrões Gherkin</div>
+                    <span class="text-[#F26522] font-mono">↗</span>
+                </a>
+                <a href="https://adr.github.io/" target="_blank" class="ref-link-card">
+                    <div class="text-[10px] font-bold uppercase tracking-wider">Guia de ADRs</div>
+                    <span class="text-[#F26522] font-mono">↗</span>
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <footer class="py-20 text-center bg-white border-t border-gray-100">
+        <span class="font-black text-3xl tracking-tighter uppercase">ZRP<span class="text-[#F26522]">.</span></span>
+        <p class="text-gray-400 font-mono text-[9px] uppercase mt-4 tracking-[0.4em]">Engineering Intelligence with Quality</p>
+    </footer>
+
+    <script>
+        const apiKey = "";
+        const files = { spec: { name: 'auth.spec.ts', content: "import { test, expect } from '@playwright/test';\n\ntest('Login Fluxo Principal', async ({ page }) => {\n  // Inicie a simulação para ver o Agent em ação\n});" } };
+
+        const simulationSteps = {
+            step1: { user: "@Codebase, como descrever steps?", ai: "Analisando ADR-001... Use **Português (Brasil)** para todos os `test.step()`.", code: "// 🔍 ADR-001 detetado: PT-BR" },
+            step2: { user: "Plano de login?", ai: "Baseado no `PRD.md`:\n1. Acesso /login\n2. Credenciais\n3. Dashboard", code: "// 📝 Plano: Automação Login" },
+            step3: { user: "Implemente.", ai: "Gerando código seguindo o contexto ZRP...", oldCode: files.spec.content, newCode: "import { test, expect } from '@playwright/test';\n\ntest('Login Fluxo Principal', async ({ page }) => {\n  await test.step('Dado que acesso a página de login', async () => {\n    await page.goto('/login');\n  });\n});" }
+        };
+
+        function updateCodeContent(content) {
+            const container = document.getElementById('code-content');
+            const lineNumContainer = document.getElementById('line-num-container');
+            if(!container || !lineNumContainer) return;
+            container.innerText = content;
+            const lines = content.split('\n');
+            lineNumContainer.innerHTML = lines.map((_, i) => `<div>${i + 1}</div>`).join('');
+        }
+
+        async function runSimulation(stepKey, el) {
+            const step = simulationSteps[stepKey];
+            const chatArea = document.getElementById('chat-area');
+            document.querySelectorAll('.demo-step-btn').forEach(b => {
+                b.classList.remove('active', 'bg-[#F26522]', 'text-white', 'shadow-md');
+                b.classList.add('bg-white', 'text-black');
+            });
+            if (el) el.classList.add('active', 'bg-[#F26522]', 'text-white', 'shadow-md');
+            if (stepKey !== 'step3') document.getElementById('cursor-bar').style.display = 'none';
+
+            chatArea.innerHTML += `<div class="chat-msg user-msg font-mono">${step.user}</div>`;
+            chatArea.scrollTop = chatArea.scrollHeight;
+            await new Promise(r => setTimeout(r, 600));
+            chatArea.innerHTML += `<div class="chat-msg ai-msg"><span class="text-[#F26522] font-bold">ZRP Agent:</span><br>${step.ai.replace(/\n/g, '<br>')}</div>`;
+            chatArea.scrollTop = chatArea.scrollHeight;
+
+            if (stepKey === 'step3') showRealisticDiff(step.oldCode, step.newCode);
+            else updateCodeContent(step.code);
+        }
+
+        function showRealisticDiff(oldCode, newCode) {
+            const codeArea = document.getElementById('code-content');
+            let diffHtml = '';
+            newCode.split('\n').forEach(line => {
+                if (line.includes('test.step') || line.includes('page.')) diffHtml += `<span class="diff-line diff-added">+ ${line}</span>`;
+                else diffHtml += `<span class="diff-line">  ${line}</span>`;
+            });
+            document.getElementById('cursor-bar').style.display = 'flex';
+            codeArea.innerHTML = diffHtml;
+            window.pendingFinalCode = newCode;
+        }
+
+        function acceptChange() {
+            document.getElementById('cursor-bar').style.display = 'none';
+            updateCodeContent(window.pendingFinalCode);
+            files.spec.content = window.pendingFinalCode;
+        }
+
+        function rejectChange() {
+            document.getElementById('cursor-bar').style.display = 'none';
+            updateCodeContent(files.spec.content);
+        }
+
+        function switchContextTab(tabKey, el) {
+            document.querySelectorAll('#context-guide-tabs .guide-tab').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.add('hidden'));
+            if (el) el.classList.add('active');
+            const targetPanel = document.getElementById('tab-content-' + tabKey);
+            if(targetPanel) targetPanel.classList.remove('hidden');
+        }
+
+        function toggleFolder(id) {
+            const folder = document.getElementById('folder-' + id);
+            if (folder) folder.style.display = folder.style.display === 'none' ? 'block' : 'none';
+        }
+
+        function openFile(key, el = null) { updateCodeContent(files.spec.content); }
+
+        function scrollToSection(id) { 
+            const el = document.getElementById(id);
+            if(el) {
+                window.scrollTo({ top: el.offsetTop - 80, behavior: 'smooth' });
+                document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
+                const targetBtn = document.querySelector(`.nav-btn[data-section="${id}"]`);
+                if(targetBtn) targetBtn.classList.add('active');
+            }
+        }
+
+        window.onload = () => {
+            const reveals = document.querySelectorAll('.reveal');
+            const observer = new IntersectionObserver((entries) => { entries.forEach(entry => { if (entry.isIntersecting) entry.target.classList.add('active'); }); });
+            reveals.forEach(reveal => observer.observe(reveal));
+
+            const ctx = document.getElementById('determinismChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: { 
+                    labels: ['Contexto Zero', 'Rules Base', 'Rules + ADRs', 'Contexto Full'], 
+                    datasets: [{ 
+                        label: 'Assertividade (%)', 
+                        data: [15, 45, 75, 98], 
+                        borderColor: '#F26522', 
+                        backgroundColor: 'rgba(242,101,34,0.1)', 
+                        fill: true, 
+                        tension: 0.4 
+                    }] 
+                },
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false, 
+                    scales: { 
+                        y: { beginAtZero: true, max: 100, title: { display: true, text: 'Assertividade (%)', font: { size: 10, weight: 'bold' } } },
+                        x: { title: { display: true, text: 'Densidade de Contexto (Docs/ADRs)', font: { size: 10, weight: 'bold' } } }
+                    },
+                    plugins: { legend: { display: false } } 
+                }
+            });
+
+            updateCodeContent(files.spec.content);
+        };
+
+        window.addEventListener('scroll', () => {
+            const sections = ['intro', 'glossary', 'simulation', 'context-guide', 'outcomes'];
+            let current = "";
+            sections.forEach(id => {
+                const section = document.getElementById(id);
+                if (section && window.scrollY >= section.offsetTop - 150) current = id;
+            });
+            document.querySelectorAll('.nav-btn').forEach(link => {
+                link.classList.toggle('active', link.getAttribute('data-section') === current);
+            });
+        });
+    </script>
+</body>
+</html>
